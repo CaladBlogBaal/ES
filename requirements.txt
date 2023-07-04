@@ -1,0 +1,9 @@
+discord.py==2.2.2
+humanize==4.6.0
+jishaku==2.5.1
+psutil==5.9.4
+pydub==0.25.1
+discord~=2.2.2
+py7zr~=0.20.4
+aiohttp~=3.8.4
+yt-dlp>=2023.6.22
