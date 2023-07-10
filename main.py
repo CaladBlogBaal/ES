@@ -37,6 +37,19 @@ class ES(commands.Bot):
     async def __ainit__(self, *args, **kwargs):
         self.request = requests.Request(self, self.session)
 
+    def create_directory(self, path):
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+    def cleanup_directory(self, path):
+
+        for entry in os.scandir(path):
+            if entry.is_dir():
+                shutil.rmtree(entry)
+
+            elif entry.is_file():
+                os.remove(entry)
+
     def handle_remove_error(self, func, path, exc_info):
         """
         Error handling function for shutil.rmtree.
@@ -182,6 +195,7 @@ if __name__ == "__main__":
 
             bot.session = session
             bot.deleter.start()  # starting the deleting thread
+            bot.cleanup_directory(os.path.join(os.getcwd(), "temp"))  # clean up the temporary directory
             # print(config.__mega_email__)
             # subprocess.run(["mega-login", config.__mega_email__, config.__mega_password__], shell=True)
             async with bot:
