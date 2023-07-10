@@ -19,13 +19,14 @@ class YTDLError(Exception):
 class YTDL:
     YTDL_OPTIONS = {
         "format": "bestaudio/best",
-        "no_playlist": True,
+        "no_playlist": "true",
         "outtmpl": "placeholder",  # will be a unique file name for future-proofing naming conflicts since I"m lazy
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "mp3",
             "preferredquality": "192",
         }],
+        "quiet": "true",
     }
 
     FFMPEG_OPTIONS = {
