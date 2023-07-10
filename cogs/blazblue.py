@@ -4,13 +4,16 @@ import typing
 
 from pathlib import Path
 from io import BytesIO
+from datetime import datetime
 
 import discord
+import humanize as h
 
 from config.utils.xwb import XWBCreator, XWBCreatorError
 from config.utils.ytdl import YTDL, YTDLError
 from config.utils.fileio import FileIO
 from config.utils.convertors import AudioConverter
+from config.utils.pacfile import FileHeader
 
 
 from discord.ext import commands
@@ -27,27 +30,29 @@ class BlazBlue(commands.Cog):
         self.bot = bot
         self.creator = XWBCreator
 
-    async def upload_to_fileio(self, ctx: commands.Context, file: discord.File, user_dir: str) -> None:
+    async def upload_to_fileio(self, ctx: commands.Context, file: discord.File, file_directory: str) -> None:
 
-        file = await FileIO.upload_file(ctx, file.filename, user_dir + file.filename)
+        file = await FileIO.upload_file(ctx, file.filename, file_directory)
+        expiration_date = datetime.fromisoformat(file.expires[:-1])
 
         m = f"Here's your modified .pac file (uploaded to file.io exceeded upload size limits):\n"
         m += f"Filename: `{file.filename}`\n"
-        m += f"Size: `{file.size}`\n"
-        m += f"Expires In: `{file.expires}`\n"
+        m += f"Size: `{h.naturalsize(file.size)}`\n"
+        m += f"Expires: `{h.naturaldate(expiration_date)}`\n"
         m += f"Download link: `{file.download_link}` ( copy and open it in browser one time download )"
 
         await ctx.send(m)
 
     async def generate_discord_file(self, ctx: commands.Context, audio: typing.Union[discord.Attachment, str],
-                                    pac_file: discord.Attachment, user_dir: str) -> [discord.File, discord.Message]:
+                                    pac_file: discord.Attachment, temp_dir: str) -> [tuple[discord.File, str],
+                                                                                     discord.Message]:
         # catching exceptions so the rest of the coroutines can run without issue if one fails
         try:
             aud_format, aud = await self.get_audio_data(ctx.bot, audio)
 
             xwb_name = pac_file.filename.replace(".pac", "")
             pac_name = YTDL.generate_unique_filename()
-            pac_path = Path(os.path.join(user_dir, pac_name + ".pac"))
+            pac_path = Path(os.path.join(temp_dir, pac_name + ".pac"))
 
             await pac_file.save(pac_path)
 
@@ -55,7 +60,7 @@ class BlazBlue(commands.Cog):
                               pac_name,
                               audio_file=aud,
                               audio_file_format=aud_format,
-                              directory=user_dir)
+                              directory=temp_dir)
             xw.create_xwb()
             xw.replace_xwb()
 
@@ -68,7 +73,7 @@ class BlazBlue(commands.Cog):
         except XWBCreatorError as e:
             return await ctx.send(f"{e}")
 
-        return file
+        return file, pac_name
 
     async def check_if_pac(self, argument: discord.Attachment) -> bool:
 
@@ -147,23 +152,22 @@ class BlazBlue(commands.Cog):
             audio_files = audio_files + [audio_files[-1]] * check
 
         async with ctx.typing():
-            user_dir = os.path.join(os.getcwd(), f"temp/{ctx.author.id}/")
+            temp_dir = os.path.join(os.getcwd(), f"temp/{ctx.author.id}/")
             generate_files_tasks = []
             upload_files_tasks = []
 
-            if not os.path.exists(user_dir):
-                os.makedirs(user_dir)
+            ctx.bot.create_directory(temp_dir)
 
             for i, pac_file in enumerate(pac_files):
                 audio = audio_files[i]
-                task = asyncio.create_task(self.generate_discord_file(ctx, audio, pac_file, user_dir))
+                task = asyncio.create_task(self.generate_discord_file(ctx, audio, pac_file, temp_dir))
                 generate_files_tasks.append(task)
 
             await asyncio.gather(*generate_files_tasks)
 
-            files = [f.result() for f in generate_files_tasks if isinstance(f.result(), discord.File)]
+            files = [f.result() for f in generate_files_tasks if isinstance(f.result(), tuple)]
 
-            for file in files:
+            for file, name in files:
                 try:
                     await ctx.send("Here's your modified .pac file", file=file)
                 except discord.errors.HTTPException:
@@ -171,20 +175,63 @@ class BlazBlue(commands.Cog):
                     # upload it to file.io
                     fn = file.filename
                     await ctx.send(f"{fn} is too big to be uploaded to discord and will be shortly uploaded to file.io")
-                    task = asyncio.create_task(self.upload_to_fileio(ctx, file, user_dir))
+                    task = asyncio.create_task(self.upload_to_fileio(ctx, file, os.path.join(temp_dir, f"{name}.pac")))
                     upload_files_tasks.append(task)
 
             await asyncio.gather(*upload_files_tasks)
 
+    @commands.command(aliases=["ex"])
+    async def extract(self, ctx, pac_file: discord.Attachment):
+        """
+        extract's the contents of a uploaded .pac file
+        -------------------------------------------------------------
+        extract pac_file
+        """
+
+        if not await self.check_if_pac(pac_file):
+            await ctx.send("> A .pac file wasn't supplied.")
+
+        async with ctx.typing():
+            temp_dir = os.path.join(os.getcwd(), f"temp/{ctx.author.id}/extract")
+
+            ctx.bot.create_directory(temp_dir)
+
+            pac_name = pac_file.filename.replace(".pac", "")
+            pac_path = Path(os.path.join(temp_dir, pac_name + ".pac"))
+            await pac_file.save(pac_path)
+
+            header = FileHeader(pac_path)
+            header.extract_all_files(temp_dir)
+            # [!seq] -> matches any character not in seq
+            files = XWBCreator.get_files(f"*.[!pac]*", temp_dir)
+
+            for file in files:
+                await ctx.send(file=discord.File(file[0]))
+
     @music.after_invoke
-    async def test_after(self, ctx: commands.Context[commands.Bot]):
+    @extract.after_invoke
+    async def after_music(self, ctx: commands.Context[commands.Bot]):
         """This triggers after the command ran."""
-        self.bot.dead_files.put(f"./temp/{ctx.author.id}/")
+        path = os.path.join(os.getcwd(), f"temp/{ctx.author.id}")
+        self.bot.dead_files.put(path)
 
     @music.error
-    async def on_error(self, ctx, error):
+    async def on_music_error(self, ctx: commands.Context[commands.Bot], _):
         """This triggers after the command ran into an unexpected error."""
-        self.bot.dead_files.put(f"./temp/{ctx.author.id}/")
+        path = os.path.join(os.getcwd(), f"temp/{ctx.author.id}")
+        self.bot.dead_files.put(path)
+
+    @extract.error
+    async def on_extract_error(self, ctx: commands.Context[commands.Bot], _):
+        """This triggers after the command ran into an unexpected error."""
+        path = os.path.join(os.getcwd(), f"temp/{ctx.author.id}/extract")
+        self.bot.dead_files.put(path)
+
+    @extract.after_invoke
+    async def after_extract(self, ctx: commands.Context[commands.Bot]):
+        """This triggers after the command ran into an unexpected error."""
+        path = os.path.join(os.getcwd(), f"temp/{ctx.author.id}/extract")
+        self.bot.dead_files.put(path)
 
 
 async def setup(bot):
