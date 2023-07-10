@@ -116,9 +116,16 @@ class XWBCreator:
         # get the tools directory path
         xwb_tools_path = os.path.join(os.getcwd(), "tools/XWBTool.exe")
 
-        subprocess.run([self.wine + xwb_tools_path, "-o",
-                        self.directory + self.xwb_name + ".xwb",
-                        self.directory + "2.wav", "-f"], check=True, shell=True)
+        if platform.system() == "Windows":
+            subprocess.run([xwb_tools_path, "-o",
+                            self.xwb_name + ".xwb",
+                            "2.wav", "-f"], check=True, cwd=self.directory)
+        else:
+            # use wine if it's linux
+            subprocess.run(["wine", xwb_tools_path, "-o",
+                            self.xwb_name + ".xwb",
+                            "2.wav", "-f"], check=True, cwd=self.directory,
+                           env={"DISPLAY": ":1", **os.environ})
 
     def replace_xwb(self, new_xwb_path=""):
 
