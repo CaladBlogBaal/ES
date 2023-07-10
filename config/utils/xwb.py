@@ -3,6 +3,7 @@ import glob
 import fnmatch
 import subprocess
 import platform
+import typing
 
 from pydub import AudioSegment
 
@@ -22,8 +23,7 @@ class XWBCreator:
                  pac_name: str,
                  audio_file="*",
                  audio_file_format="",
-                 directory=os.getcwd() + "/",
-                 tool="export DISPLAY=:1 ; wine "):
+                 directory=os.getcwd() + "/"):
         """
         :param xwb_name: The xwb filename to be replaced
         :param pac_name: The pac filename
@@ -31,10 +31,7 @@ class XWBCreator:
         if no filename is inserted will look for audio files in the parent then subdirectories
         :param audio_file_format: The file format of this audio file
         :param directory: The directory file creation operations will take place in.
-        :param tool: The compatibility tool for linux systems.
         """
-        self.compatibility_tool = tool
-        self.wine = "" if platform.system() == "Windows" else self.compatibility_tool
         self.xwb_name = xwb_name
         self.pac_name = pac_name
         self.directory = directory
@@ -55,7 +52,8 @@ class XWBCreator:
 
             self.input = AudioSegment.from_file(audio_file, format=audio_file_format)
 
-    def walk_path(self, path):
+    @staticmethod
+    def walk_path(path) -> [typing.List[tuple[str, str, str]]]:
         # using glob to return paths that meet the pattern
         paths = glob.glob(path)
         if not paths:
@@ -67,8 +65,9 @@ class XWBCreator:
 
         return result
 
-    def get_files(self, pattern, path):
-        for dirpath, _, filenames in self.walk_path(path):
+    @staticmethod
+    def get_files(pattern, path) -> [str, str]:
+        for dirpath, _, filenames in XWBCreator.walk_path(path):
             for f in filenames:
                 if fnmatch.fnmatch(f, pattern):
                     yield os.path.join(dirpath, f), f
@@ -88,9 +87,10 @@ class XWBCreator:
 
         ffmpeg_cmd = [
             "ffmpeg",
+            "-loglevel", "error",
             "-y",
             "-i", self.directory + "1.wav",
-            "-vn",
+            # "-vn",
             "-c:a", "adpcm_ms",
             "-block_size", "512",
             "-b:a", "2560000",
@@ -98,7 +98,7 @@ class XWBCreator:
             "-ac", "2",
             "-f:a", "wav",
             "-strict", "experimental",
-            self.directory + "2.wav"
+            self.directory + "2.wav",
         ]
 
         # Add the ffmpeg command to the parameters
@@ -119,12 +119,12 @@ class XWBCreator:
         if platform.system() == "Windows":
             subprocess.run([xwb_tools_path, "-o",
                             self.xwb_name + ".xwb",
-                            "2.wav", "-f"], check=True, cwd=self.directory)
+                            "2.wav", "-f"], check=True, stdout=subprocess.DEVNULL, cwd=self.directory)
         else:
             # use wine if it's linux
             subprocess.run(["wine", xwb_tools_path, "-o",
                             self.xwb_name + ".xwb",
-                            "2.wav", "-f"], check=True, cwd=self.directory,
+                            "2.wav", "-f"], check=True, stdout=subprocess.DEVNULL, cwd=self.directory,
                            env={"DISPLAY": ":1", **os.environ})
 
     def replace_xwb(self, new_xwb_path=""):
