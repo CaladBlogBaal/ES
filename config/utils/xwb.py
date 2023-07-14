@@ -15,7 +15,7 @@ class XWBCreatorError(Exception):
 
 
 class XWBCreator:
-    FILE_FORMATS = ["mp3", "mp4", "ogg", "wav", "flac"]
+    FILE_FORMATS = ["mp3", "mp4", "ogg", "wav", "flac", "acc", "aiff", "amr", "mid"]
     # HZ
     OUTPUT_RATE = 48000
 
