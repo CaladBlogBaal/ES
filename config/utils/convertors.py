@@ -1,8 +1,13 @@
 import re
+import typing
+
+import filetype
 
 import discord
 from discord import Attachment
 from discord.ext import commands
+
+from config.utils.xwb import XWBCreator
 
 
 class PacFileConverter:
@@ -31,7 +36,7 @@ class AudioConverter:
 
         return argument
 
-    def convert(self, ctx, argument: [str, discord.Attachment],
+    async def convert(self, ctx, argument: typing.Union[str, discord.Attachment],
                 error_msg="An invalid url/file was passed for audio.") -> [str, discord.Attachment]:
 
         if isinstance(argument, str):
@@ -40,7 +45,19 @@ class AudioConverter:
 
             raise commands.BadArgument(error_msg)
 
-        if "audio" not in argument.content_type.lower():
-            raise commands.BadArgument(error_msg)
+        if argument.content_type:
+            if "audio" not in argument.content_type.lower():
+                raise commands.BadArgument(error_msg)
+        else:
+            extension = filetype.guess_extension(await argument.read())
+
+            if not extension:
+                raise commands.BadArgument(f"Could not get file extension for {argument.filename}")
+
+            if extension not in XWBCreator.FILE_FORMATS:
+                raise commands.BadArgument(
+                    f"Invalid file format for the file {argument.filename} was passed for audio.")
+
+            argument.filename = f"{argument.filename}.{extension}"
 
         return argument

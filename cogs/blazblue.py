@@ -8,6 +8,7 @@ from datetime import datetime
 
 import discord
 import humanize as h
+import filetype
 
 from config.utils.xwb import XWBCreator, XWBCreatorError
 from config.utils.ytdl import YTDL, YTDLError
@@ -80,13 +81,19 @@ class BlazBlue(commands.Cog):
         if not isinstance(argument, discord.Attachment):
             return False
 
-        if "application/x-ns-proxy-autoconfig" not in argument.content_type:
-            return False
-
         magic_word = (await argument.read())[:4].decode("ASCII")
 
-        if magic_word != "FPAC":
-            raise commands.BadArgument(".pac File has an incorrect structure.")
+        # has file extension
+        if argument.content_type:
+            if "application/x-ns-proxy-autoconfig" not in argument.content_type:
+                return False
+
+            if magic_word != "FPAC":
+                raise commands.BadArgument(f"The .pac file {argument.filename} has an incorrect structure.")
+
+        else:
+            # no file extension so only checking the magic word
+            return magic_word == "FPAC"
 
         return True
 
@@ -103,7 +110,11 @@ class BlazBlue(commands.Cog):
             await audio.save(aud)
             aud.seek(0)
 
-        return audio.filename.split(".")[1], aud
+        _, extension = os.path.splitext(audio.filename)
+
+        extension = extension.replace(".", "")
+
+        return extension, aud
 
     async def categorize_files(self, ctx: commands.Context,
                                files: list[typing.Union[str, discord.Attachment]]) -> [typing.List, typing.List]:
@@ -114,7 +125,7 @@ class BlazBlue(commands.Cog):
             if await self.check_if_pac(file):
                 pac_files.append(file)
             else:
-                audio_files.append(AudioConverter().convert(ctx, file))
+                audio_files.append(await AudioConverter().convert(ctx, file))
 
         return pac_files, audio_files
 
