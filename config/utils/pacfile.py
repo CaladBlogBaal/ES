@@ -1,3 +1,4 @@
+import mmap
 import struct
 import os
 
@@ -57,6 +58,7 @@ class FileHeader:
         self.count_of_files = 0
         self.name_length = 0
         self.files = []
+        self.buffer_size = 1048576
 
         with open(pac_path, "rb") as binary_file:
             magic_word = binary_file.read(4).decode("ASCII")
@@ -75,7 +77,7 @@ class FileHeader:
                 file_obj = File(self)
                 file_obj.file_name = binary_file.read(self.name_length).decode("ASCII").replace("\0", "")
                 file_obj.id = struct.unpack("<i", binary_file.read(4))[0]
-                file_obj.offset = struct.unpack("<i", binary_file.read(4))[0] + self.start_offset
+                file_obj.offset = (struct.unpack("<i", binary_file.read(4))[0] + self.start_offset + 15) // 16 * 16
                 file_obj.file_size = struct.unpack("<i", binary_file.read(4))[0]
                 binary_file.seek(4 - (self.name_length % 4), 1)
                 self.files.append(file_obj)
@@ -85,7 +87,7 @@ class FileHeader:
             for file_obj in self.files:
                 with open(dir_path + "/" + file_obj.file_name, "wb") as file_output:
                     num = file_obj.file_size
-                    buffer_size = 16384
+                    buffer_size = self.buffer_size
                     file_stream.seek(file_obj.offset)
                     while num != 0:
                         if num < buffer_size:
@@ -96,6 +98,9 @@ class FileHeader:
                             data = file_stream.read(buffer_size)
                             file_output.write(data)
                             num -= buffer_size
+
+                    while file_output.tell() % 16 != 0:
+                        file_output.write(b"\0")
 
     def replace(self, file_obj, file_path):
         temp_file_path = "temp.tmp"
@@ -118,25 +123,33 @@ class FileHeader:
 
             for file_item in self.files:
                 temp_file_stream.write(file_item.file_name.encode("ASCII"))
-                padding_size = self.name_length - len(file_item.file_name)
-                temp_file_stream.write(struct.pack(f"<{padding_size}s", b"\0" * padding_size))
+                padding_size = max(0, self.name_length - len(file_item.file_name))
+                temp_file_stream.write(b"\0" * padding_size)
                 temp_file_stream.write(struct.pack("<i", file_item.id))
                 temp_file_stream.write(struct.pack("<i", file_item.offset - self.start_offset))
                 temp_file_stream.write(struct.pack("<i", file_item.file_size))
                 temp_file_stream.write(struct.pack("<i", 0))
+                # Align to 16-byte boundary
                 while temp_file_stream.tell() % 16 != 0:
                     temp_file_stream.write(b"\0")
 
             for file_item in self.files:
-                buffer_size = 16384
+                buffer_size = self.buffer_size
 
                 if file_item.id == file_obj.id:
                     with open(file_path, "rb") as replacement_file:
+                        bytes_written = 0
                         while True:
                             data = replacement_file.read(buffer_size)
                             if not data:
                                 break
                             temp_file_stream.write(data)
+                            bytes_written += len(data)
+
+                        # Zero out remaining space if the replacement file is smaller
+                        remaining_size = file_item.file_size - bytes_written
+                        if remaining_size > 0:
+                            temp_file_stream.write(b"\0" * remaining_size)
                 else:
                     file_stream.seek(file_item.offset)
                     data = file_stream.read(file_item.file_size)
@@ -148,20 +161,25 @@ class FileHeader:
         os.replace(temp_file_path, self.file_path)
 
     def recalculate_values(self):
-        num = max(len(file_item.file_name) for file_item in self.files) + 1
-        self.name_length = num
-        while self.name_length % 4 != 0:
-            self.name_length += 1
+        num = max(len(file_item.file_name) for file_item in self.files)
+        self.name_length = ((num + 1 + 3) // 4) * 4
 
-        i = self.name_length + 16
-        while i % 16 != 0:
-            i += 1
+        # Calculate header entry size (aligned to 16 bytes)
+        header_entry_size = self.name_length + 16
+        header_entry_size = ((header_entry_size + 15) // 16) * 16
 
-        self.start_offset = 32 + len(self.files) * i
+        header_size = 32 + len(self.files) * header_entry_size
+        self.start_offset = ((header_size + 15) // 16) * 16
+
         self.files[0].offset = self.start_offset
-        for j in range(1, len(self.files)):
-            self.files[j].offset = self.files[j - 1].offset + self.files[j - 1].file_size
-            while self.files[j].offset % 16 != 0:
-                self.files[j].offset += 1
+        for i in range(1, len(self.files)):
+            previous_file = self.files[i - 1]
+            current_file = self.files[i]
+            current_file.offset = previous_file.offset + previous_file.file_size
+            current_file.offset = ((current_file.offset + 15) // 16) * 16
 
-        self.file_size = self.files[-1].offset + self.files[-1].file_size
+        last_file = self.files[-1]
+        self.file_size = last_file.offset + last_file.file_size
+
+        while self.file_size % 16 != 0:
+            self.file_size += 1
