@@ -1,5 +1,4 @@
 discord.py==2.2.2
-humanize==4.6.0
 jishaku==2.5.1
 psutil==5.9.4
 pydub==0.25.1
