@@ -4,15 +4,12 @@ import typing
 
 from pathlib import Path
 from io import BytesIO
-from datetime import datetime
 
 import discord
-import humanize as h
-import filetype
 
 from config.utils.xwb import XWBCreator, XWBCreatorError
 from config.utils.ytdl import YTDL, YTDLError
-from config.utils.fileio import FileIO
+from config.utils.filebin import FileBin
 from config.utils.convertors import AudioConverter
 from config.utils.pacfile import FileHeader
 
@@ -31,15 +28,14 @@ class BlazBlue(commands.Cog):
         self.bot = bot
         self.creator = XWBCreator
 
-    async def upload_to_fileio(self, ctx: commands.Context, file: discord.File, file_directory: str) -> None:
+    async def upload_to_fileio(self, ctx: commands.Context, file: discord.File, file_directory: str, user_id: int) -> None:
 
-        file = await FileIO.upload_file(ctx, file.filename, file_directory)
-        expiration_date = datetime.fromisoformat(file.expires[:-1])
+        file = await FileBin.upload_file(ctx, file.filename, file_directory, user_id)
 
         m = f"Here's your modified .pac file (uploaded to file.io exceeded upload size limits):\n"
         m += f"Filename: `{file.filename}`\n"
-        m += f"Size: `{h.naturalsize(file.size)}`\n"
-        m += f"Expires: `{h.naturaldate(expiration_date)}`\n"
+        m += f"Size: `{file.size}`\n"
+        m += f"Expires: `{file.expires}`\n"
         m += f"Download link: `{file.download_link}` ( copy and open it in browser one time download )"
 
         await ctx.send(m)
@@ -164,19 +160,17 @@ class BlazBlue(commands.Cog):
 
         async with ctx.typing():
             temp_dir = os.path.join(os.getcwd(), f"temp/{ctx.author.id}/")
-            generate_files_tasks = []
             upload_files_tasks = []
 
             ctx.bot.create_directory(temp_dir)
-
-            for i, pac_file in enumerate(pac_files):
-                audio = audio_files[i]
-                task = asyncio.create_task(self.generate_discord_file(ctx, audio, pac_file, temp_dir))
-                generate_files_tasks.append(task)
-
-            await asyncio.gather(*generate_files_tasks)
-
-            files = [f.result() for f in generate_files_tasks if isinstance(f.result(), tuple)]
+            # slighty faster so doing this instead
+            files = [
+                f
+                for f in await asyncio.gather(
+                    *[asyncio.create_task(self.generate_discord_file(ctx, audio_files[i], pac_file, temp_dir))
+                      for i, pac_file in enumerate(pac_files)]
+                ) if isinstance(f, tuple)
+            ]
 
             for file, name in files:
                 try:
@@ -186,7 +180,7 @@ class BlazBlue(commands.Cog):
                     # upload it to file.io
                     fn = file.filename
                     await ctx.send(f"{fn} is too big to be uploaded to discord and will be shortly uploaded to file.io")
-                    task = asyncio.create_task(self.upload_to_fileio(ctx, file, os.path.join(temp_dir, f"{name}.pac")))
+                    task = asyncio.create_task(self.upload_to_fileio(ctx, file, os.path.join(temp_dir, f"{name}.pac"), ctx.author.id))
                     upload_files_tasks.append(task)
 
             await asyncio.gather(*upload_files_tasks)
