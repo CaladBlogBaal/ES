@@ -31,7 +31,7 @@ class Request:
 
     @staticmethod
     async def return_content(response, headers):
-        if not response.status == 200:
+        if response.status not in (200, 201):
             raise RequestFailed(f"seems like an error occurred for this request this api might be experiencing "
                                 f"problems `{response.reason}`.")
 
