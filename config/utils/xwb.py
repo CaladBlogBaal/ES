@@ -83,28 +83,12 @@ class XWBCreator:
     def adpcm_compress(self):
         self.export_input()
 
-        self.output.export(self.directory + "1.wav", format="wav")
-
-        ffmpeg_cmd = [
-            "ffmpeg",
-            "-loglevel", "error",
-            "-y",
-            "-i", self.directory + "1.wav",
-            # "-vn",
-            "-c:a", "adpcm_ms",
-            "-block_size", "512",
-            "-b:a", "2560000",
-            "-ar", "48000",
-            "-ac", "2",
-            "-f:a", "wav",
-            "-strict", "experimental",
-            self.directory + "2.wav",
-        ]
-
-        # Add the ffmpeg command to the parameters
-        parameters = ffmpeg_cmd
-
-        subprocess.run(parameters, check=True)
+        self.output.export(self.directory + "temp.wav", format="wav", codec="adpcm_ms", parameters=
+        ["-block_size", "512",
+         "-ar", "48000",
+         "-ac", "2",
+        "-strict", "experimental",
+        ])
 
     def create_xwb(self):
         self.adpcm_compress()
@@ -119,12 +103,12 @@ class XWBCreator:
         if platform.system() == "Windows":
             subprocess.run([xwb_tools_path, "-o",
                             self.xwb_name + ".xwb",
-                            "2.wav", "-f"], check=True, stdout=subprocess.DEVNULL, cwd=self.directory)
+                            "temp.wav", "-f", "-nc"], check=True, stdout=subprocess.DEVNULL, cwd=self.directory)
         else:
             # use wine if it's linux
             subprocess.run(["wine", xwb_tools_path, "-o",
                             self.xwb_name + ".xwb",
-                            "2.wav", "-f"], check=True, stdout=subprocess.DEVNULL, cwd=self.directory,
+                            "temp.wav", "-f", "-nc"], check=True, stdout=subprocess.DEVNULL, cwd=self.directory,
                            env={"DISPLAY": ":1", **os.environ})
 
     def replace_xwb(self, new_xwb_path=""):
