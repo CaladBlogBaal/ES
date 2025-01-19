@@ -89,18 +89,12 @@ class FileHeader:
                     num = file_obj.file_size
                     buffer_size = self.buffer_size
                     file_stream.seek(file_obj.offset)
-                    while num != 0:
-                        if num < buffer_size:
-                            data = file_stream.read(num)
-                            file_output.write(data)
-                            num = 0
-                        else:
-                            data = file_stream.read(buffer_size)
-                            file_output.write(data)
-                            num -= buffer_size
+                    while num > 0:
+                        data = file_stream.read(min(num, buffer_size))
+                        file_output.write(data)
+                        num -= len(data)
 
-                    while file_output.tell() % 16 != 0:
-                        file_output.write(b"\0")
+
 
     def replace(self, file_obj, file_path):
         temp_file_path = "temp.tmp"
