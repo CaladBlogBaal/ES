@@ -318,7 +318,7 @@ class BlazBlue(commands.Cog):
         self.bot.dead_files.put(path)
 
     @volume.after_invoke
-    async def after_volume(self, ctx: commands.Context[commands.Bot], _):
+    async def after_volume(self, ctx: commands.Context[commands.Bot]):
         """This triggers after the command finished without errors."""
         path = os.path.join(os.getcwd(), f"temp/{ctx.author.id}/volume")
         self.bot.dead_files.put(path)
